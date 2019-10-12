@@ -12,8 +12,11 @@ export interface Ref<T> {
 
 export type UnwrapNestedRefs<T> = T extends Ref<any> ? T : UnwrapRef<T>
 
+// proxy对象 || 原始值
 const convert = (val: any): any => (isObject(val) ? reactive(val) : val)
 
+// 这是通过比较设置get set 方法监听
+// 原理同 vue2
 export function ref<T>(raw: T): Ref<T> {
   raw = convert(raw)
   const v = {

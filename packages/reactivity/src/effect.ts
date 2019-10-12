@@ -134,6 +134,8 @@ export function track(
     if (dep === void 0) {
       depsMap.set(key!, (dep = new Set()))
     }
+
+    // dep 是target -> key 的所有依赖，其实就是target[key] 改变时所需要触发的所有函数
     if (!dep.has(effect)) {
       dep.add(effect)
       effect.deps.push(dep)

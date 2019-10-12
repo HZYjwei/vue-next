@@ -13,10 +13,14 @@ import { ReactiveEffect } from './effect'
 // Conceptually, it's easier to think of a dependency as a Dep class
 // which maintains a Set of subscribers, but we simply store them as
 // raw Sets to reduce memory overhead.
+
+// targetMap 是一个target -> key -> dep 的map
 export type Dep = Set<ReactiveEffect>
 export type KeyToDepMap = Map<string | symbol, Dep>
 export const targetMap = new WeakMap<any, KeyToDepMap>()
 
+// 分别通过连个双向的WeakMap
+// 做一个proxy对象 和 原始对象的映射 方便存取
 // WeakMaps that store {raw <-> observed} pairs.
 const rawToReactive = new WeakMap<any, any>()
 const reactiveToRaw = new WeakMap<any, any>()
@@ -77,6 +81,15 @@ export function readonly(target: object) {
   )
 }
 
+// 本文件最主要的函数
+/**
+ * 
+ * @param target 原始对象
+ * @param toProxy 原始对象 => proxy 的weakMap
+ * @param toRaw proxy => 原始对象的 weakMap
+ * @param baseHandlers 
+ * @param collectionHandlers 
+ */
 function createReactiveObject(
   target: any,
   toProxy: WeakMap<any, any>,
@@ -91,10 +104,12 @@ function createReactiveObject(
     return target
   }
   // target already has corresponding Proxy
+  // 就是已经代理过的 直接返回
   let observed = toProxy.get(target)
   if (observed !== void 0) {
     return observed
   }
+  // 本身是一个proxy对象 也返回
   // target is already a Proxy
   if (toRaw.has(target)) {
     return target

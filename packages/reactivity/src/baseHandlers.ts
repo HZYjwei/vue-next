@@ -9,7 +9,7 @@ const builtInSymbols = new Set(
   Object.getOwnPropertyNames(Symbol)
     .map(key => (Symbol as any)[key])
     .filter(value => typeof value === 'symbol')
-)
+)                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
 
 function createGetter(isReadonly: boolean) {
   return function get(target: any, key: string | symbol, receiver: any) {
@@ -17,6 +17,7 @@ function createGetter(isReadonly: boolean) {
     if (typeof key === 'symbol' && builtInSymbols.has(key)) {
       return res
     }
+    // 使用ref监听过res
     if (isRef(res)) {
       return res.value
     }
@@ -92,6 +93,7 @@ function ownKeys(target: any): (string | number | symbol)[] {
   return Reflect.ownKeys(target)
 }
 
+// 普通对象的proxyhandlers
 export const mutableHandlers: ProxyHandler<any> = {
   get: createGetter(false),
   set,
