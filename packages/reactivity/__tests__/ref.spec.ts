@@ -83,12 +83,15 @@ describe('reactivity/ref', () => {
     expect(isRef({ value: 0 })).toBe(false)
   })
 
+  // 这个测试用例比较重要
   test('toRefs', () => {
     const a = reactive({
       x: 1,
       y: 2
     })
 
+    // x, y 是两个响应式对象， a 是一个 proxy 实例
+    // 赋值的时候 会进行依赖收集
     const { x, y } = toRefs(a)
 
     expect(isRef(x)).toBe(true)
@@ -97,12 +100,16 @@ describe('reactivity/ref', () => {
     expect(y.value).toBe(2)
 
     // source -> proxy
+    // a.x 进行赋值的时候会有proxy的 trigger 去调用ref实例的set
     a.x = 2
     a.y = 3
     expect(x.value).toBe(2)
     expect(y.value).toBe(3)
 
     // proxy -> source
+    // 因为toProxyRef set 是 (val) => object[key] = newVal
+    // object 是proxy对象
+    // x.value = 3   ====>    a.x = 3
     x.value = 3
     y.value = 4
     expect(a.x).toBe(3)
@@ -118,6 +125,7 @@ describe('reactivity/ref', () => {
     expect(dummyY).toBe(y.value)
 
     // mutating source should trigger effect using the proxy refs
+    // 执行了effect 中的 trigger
     a.x = 4
     a.y = 5
     expect(dummyX).toBe(4)
