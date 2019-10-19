@@ -1,3 +1,4 @@
+// 这个文件通过状态机的改变转化template为vnode
 import {
   ErrorCodes,
   CompilerError,
@@ -78,6 +79,7 @@ interface ParserContext {
 
 export function parse(content: string, options: ParserOptions = {}): RootNode {
   const context = createParserContext(content, options)
+  // start = { column, line, offset }
   const start = getCursor(context)
 
   return {
@@ -88,6 +90,7 @@ export function parse(content: string, options: ParserOptions = {}): RootNode {
     directives: [],
     hoists: [],
     codegenNode: undefined,
+    // loc 是起始位置loc.start === loc.end
     loc: getSelection(context, start)
   }
 }
@@ -106,6 +109,7 @@ function createParserContext(
     offset: 0,
     originalSource: content,
     source: content,
+    // namedCharacterReferences 中key最长的长度
     maxCRNameLength: Object.keys(
       options.namedCharacterReferences ||
         defaultParserOptions.namedCharacterReferences
@@ -122,6 +126,7 @@ function parseChildren(
   const ns = parent ? parent.ns : Namespaces.HTML
   const nodes: TemplateChildNode[] = []
 
+  // 就是一个循环截取
   while (!isEnd(context, mode, ancestors)) {
     __DEV__ && assert(context.source.length > 0)
     const s = context.source
@@ -182,6 +187,7 @@ function parseChildren(
       }
     }
     if (!node) {
+      // 文本节点
       node = parseText(context, mode)
     }
 
@@ -241,6 +247,7 @@ function parseCDATA(
     assert(last(ancestors) == null || last(ancestors)!.ns !== Namespaces.HTML)
   __DEV__ && assert(startsWith(context.source, '<![CDATA['))
 
+  //   渲染的时候碰到 <![CDATA[ text ]] 则忽略<![CDATA[ ]]
   advanceBy(context, 9)
   const nodes = parseChildren(context, TextModes.CDATA, ancestors)
   if (context.source.length === 0) {
@@ -318,6 +325,11 @@ function parseBogusComment(context: ParserContext): CommentNode | undefined {
   }
 }
 
+/**
+ * @desc 通过递归和元素栈，循环去遍历子节点，转化为vnode对象
+ * @param context
+ * @param ancestors 元素栈
+ */
 function parseElement(
   context: ParserContext,
   ancestors: ElementNode[]
@@ -325,6 +337,7 @@ function parseElement(
   __DEV__ && assert(/^<[a-z]/i.test(context.source))
 
   // Start tag.
+  // 获取栈顶元素作为父元素
   const parent = last(ancestors)
   const element = parseTag(context, TagType.Start, parent)
 
@@ -332,7 +345,7 @@ function parseElement(
     return element
   }
 
-  // Children.
+  // 通过栈和递归找子节点
   ancestors.push(element)
   const mode = (context.options.getTextMode(
     element.tag,
@@ -381,6 +394,7 @@ function parseTag(
 
   // Tag open.
   const start = getCursor(context)
+  // 去匹配标签名
   const match = /^<\/?([a-z][^\t\r\n\f />]*)/i.exec(context.source)!
   const tag = match[1]
   const props = []
@@ -389,6 +403,7 @@ function parseTag(
   let tagType = ElementTypes.ELEMENT
   if (tag === 'slot') tagType = ElementTypes.SLOT
   else if (tag === 'template') tagType = ElementTypes.TEMPLATE
+  // 这个/[A-Z-]/是自定义的组件？
   else if (/[A-Z-]/.test(tag)) tagType = ElementTypes.COMPONENT
 
   advanceBy(context, match[0].length)
@@ -453,7 +468,8 @@ function parseAttribute(
 ): AttributeNode | DirectiveNode {
   __DEV__ && assert(/^[^\t\r\n\f />]/.test(context.source))
 
-  // Name.
+  // Name
+  // 属性名
   const start = getCursor(context)
   const match = /^[^\t\r\n\f />][^\t\r\n\f />=]*/.exec(context.source)!
   const name = match[0]
@@ -501,10 +517,15 @@ function parseAttribute(
   const loc = getSelection(context, start)
 
   if (/^(v-|:|@|#)/.test(name)) {
+    //   处理 v- : @ 等 Vue 指令 ---> # 是什么指令 id？
+    // match[1] 匹配 ([a-z0-9-]+)   指令名
+    // match[2] 匹配 ([^\.]+)       指令的参数
+    // match[3] 匹配 (.+)           指令的修饰符
     const match = /(?:^v-([a-z0-9-]+))?(?:(?::|^@|^#)([^\.]+))?(.+)?$/i.exec(
       name
     )!
 
+    console.log(match, name)
     let arg: ExpressionNode | undefined
 
     if (match[2]) {
@@ -538,6 +559,7 @@ function parseAttribute(
       }
     }
 
+    // v-if 或者 其他自定义指令
     if (value && value.isQuoted) {
       const valueLoc = value.loc
       valueLoc.start.offset++
@@ -546,6 +568,8 @@ function parseAttribute(
       valueLoc.source = valueLoc.source.slice(1, -1)
     }
 
+    // name： 如果是if或者自定义的指令就直接赋值
+    // 否则 就是bind on slot 指令
     return {
       type: NodeTypes.DIRECTIVE,
       name:
@@ -567,6 +591,7 @@ function parseAttribute(
     }
   }
 
+  // 普通的属性
   return {
     type: NodeTypes.ATTRIBUTE,
     name,
@@ -599,7 +624,9 @@ function parseAttributeValue(
     advanceBy(context, 1)
 
     const endIndex = context.source.indexOf(quote)
+    console.log(endIndex)
     if (endIndex === -1) {
+      // 只有上引号, 没有下引号， 就把整个转化为text类型
       content = parseTextData(
         context,
         context.source.length,
@@ -610,7 +637,7 @@ function parseAttributeValue(
       advanceBy(context, 1)
     }
   } else {
-    // Unquoted
+    // 没有引号
     const match = /^[^\t\r\n\f >]+/.exec(context.source)
     if (!match) {
       return undefined
@@ -637,6 +664,7 @@ function parseInterpolation(
   const [open, close] = context.options.delimiters
   __DEV__ && assert(startsWith(context.source, open))
 
+  // 从 {{ 开始找 }}
   const closeIndex = context.source.indexOf(close, open.length)
   if (closeIndex === -1) {
     emitError(context, ErrorCodes.X_MISSING_INTERPOLATION_END)
@@ -651,8 +679,12 @@ function parseInterpolation(
   const rawContent = context.source.slice(0, rawContentLength)
   const preTrimContent = parseTextData(context, rawContentLength, mode)
   const content = preTrimContent.trim()
+
+  // 取出{{ 和 }} 中间的内容
+  // 没有转义字符的时候
   const startOffset = preTrimContent.indexOf(content)
   if (startOffset > 0) {
+    // 重新计算一下innerStart的， 把空格计算进去
     advancePositionWithMutation(innerStart, rawContent, startOffset)
   }
   const endOffset =
@@ -687,6 +719,7 @@ function parseText(context: ParserContext, mode: TextModes): TextNode {
   __DEV__ && assert(endIndex > 0)
 
   const start = getCursor(context)
+  // 将文本节点转移成vnode
   const content = parseTextData(context, endIndex, mode)
 
   return {
@@ -698,6 +731,9 @@ function parseText(context: ParserContext, mode: TextModes): TextNode {
 }
 
 /**
+ * 主要是转义字符的转义, 在length之间
+ * 转义之后 context.source = 转义字符（或者&）后面的字符串
+ *  返回  text 是转义之后的字符串
  * Get text data with a given length from the current location.
  * This translates HTML entities in the text data.
  */
@@ -719,6 +755,9 @@ function parseTextData(
   while (context.offset < end) {
     const head = /&(?:#x?)?/i.exec(context.source)
     if (!head || context.offset + head.index >= end) {
+      // 没有转义字符
+      //  text = context.source
+      // context.source = ""
       const remaining = end - context.offset
       text += context.source.slice(0, remaining)
       advanceBy(context, remaining)
@@ -729,6 +768,8 @@ function parseTextData(
     text += context.source.slice(0, head.index)
     advanceBy(context, head.index)
 
+    // text 是& 之前的部分
+    // context.source 必定以&开头;
     if (head[0] === '&') {
       // Named character reference.
       let name = '',
@@ -742,6 +783,9 @@ function parseTextData(
           name = context.source.substr(1, length)
           value = context.options.namedCharacterReferences[name]
         }
+        // name: 匹配的最长转义字符
+        // value: 转义后的值
+        // 找到 & 之后的第一个转义字符，从最后面开始找的
         if (value) {
           const semi = name.endsWith(';')
           if (
@@ -749,6 +793,8 @@ function parseTextData(
             !semi &&
             /[=a-z0-9]/i.test(context.source[1 + name.length] || '')
           ) {
+            // 就不是标准的转义字符， 不以;结尾
+            // text = text + 最长匹配转义字符
             text += '&'
             text += name
             advanceBy(context, 1 + name.length)
@@ -783,8 +829,11 @@ function parseTextData(
           context,
           ErrorCodes.ABSENCE_OF_DIGITS_IN_NUMERIC_CHARACTER_REFERENCE
         )
+        // text 是到 &
+        // context.source往后移一位
         advanceBy(context, head[0].length)
       } else {
+        // 看文档
         // https://html.spec.whatwg.org/multipage/parsing.html#numeric-character-reference-end-state
         let cp = Number.parseInt(body[1], hex ? 16 : 10)
         if (cp === 0) {
@@ -810,6 +859,7 @@ function parseTextData(
           emitError(context, ErrorCodes.CONTROL_CHARACTER_REFERENCE)
           cp = CCR_REPLACEMENTS[cp] || cp
         }
+        // 转义
         text += String.fromCodePoint(cp)
         advanceBy(context, body[0].length)
         if (!body![0].endsWith(';')) {
@@ -850,6 +900,11 @@ function startsWith(source: string, searchString: string): boolean {
   return source.startsWith(searchString)
 }
 
+/**
+ * @desc 做字符串截断 context.source 从numberOfCharacters开始的文本
+ * @param context
+ * @param numberOfCharacters
+ */
 function advanceBy(context: ParserContext, numberOfCharacters: number): void {
   const { source } = context
   __DEV__ && assert(numberOfCharacters <= source.length)
@@ -895,6 +950,12 @@ function emitError(
   )
 }
 
+/**
+ *
+ * @param context
+ * @param mode
+ * @param ancestors
+ */
 function isEnd(
   context: ParserContext,
   mode: TextModes,
@@ -905,7 +966,9 @@ function isEnd(
   switch (mode) {
     case TextModes.DATA:
       if (startsWith(s, '</')) {
-        //TODO: probably bad performance
+        //TODO: probably bad
+        // 从最后一个判断到第一个, 如果有标签匹配到
+        // 则 返回true
         for (let i = ancestors.length - 1; i >= 0; --i) {
           if (startsWithEndTagOpen(s, ancestors[i].tag)) {
             return true
@@ -933,6 +996,11 @@ function isEnd(
   return !s
 }
 
+/**
+ * @desc source 是否是 tag的结束标签
+ * @param source
+ * @param tag
+ */
 function startsWithEndTagOpen(source: string, tag: string): boolean {
   return (
     startsWith(source, '</') &&

@@ -227,6 +227,10 @@ function createInstrumentationGetter(instrumentations: any) {
   }
 }
 
+// proxyHanlder
+// {
+//     get: (target, key) => Reflect.get(mutableInstrumentations, key)
+// }
 export const mutableCollectionHandlers: ProxyHandler<any> = {
   get: createInstrumentationGetter(mutableInstrumentations)
 }

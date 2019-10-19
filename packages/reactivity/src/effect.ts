@@ -44,8 +44,10 @@ export function effect(
   }
   const effect = createReactiveEffect(fn, options)
   if (!options.lazy) {
+    // 非computed的属性，直接执行一遍
     effect()
   }
+  // 所有监听的值都需要再下次修改的时候trigger
   return effect
 }
 
@@ -78,13 +80,17 @@ function createReactiveEffect(
   return effect
 }
 
+//
 function run(effect: ReactiveEffect, fn: Function, args: any[]): any {
+  // 非active的话直接执行;
   if (!effect.active) {
     return fn(...args)
   }
   if (activeReactiveEffectStack.indexOf(effect) === -1) {
+    // 遍历清空effect.deps的所有依赖
     cleanup(effect)
     try {
+      // 推到栈中并执行
       activeReactiveEffectStack.push(effect)
       return fn(...args)
     } finally {
@@ -93,6 +99,7 @@ function run(effect: ReactiveEffect, fn: Function, args: any[]): any {
   }
 }
 
+// 遍历清空effect.deps的所有依赖
 function cleanup(effect: ReactiveEffect) {
   const { deps } = effect
   if (deps.length) {
@@ -121,6 +128,7 @@ export function track(
   if (!shouldTrack) {
     return
   }
+  // 取出顶部栈的effect
   const effect = activeReactiveEffectStack[activeReactiveEffectStack.length - 1]
   if (effect) {
     if (type === OperationTypes.ITERATE) {
@@ -135,7 +143,7 @@ export function track(
       depsMap.set(key!, (dep = new Set()))
     }
 
-    // dep 是target -> key 的所有依赖，其实就是target[key] 改变时所需要触发的所有函数
+    // dep 是target -> key 的所有依赖，其实就是target[key] 改变时所需要触发的所有函数，就是一个个effect函数
     if (!dep.has(effect)) {
       dep.add(effect)
       effect.deps.push(dep)
@@ -159,22 +167,29 @@ export function trigger(
 ) {
   const depsMap = targetMap.get(target)
   if (depsMap === void 0) {
-    // never been tracked
+    // 没有被追踪过依赖
     return
   }
+  // Vue.$options.data 中的依赖
   const effects = new Set<ReactiveEffect>()
+  // Vue.$options.computed 中的依赖
   const computedRunners = new Set<ReactiveEffect>()
   if (type === OperationTypes.CLEAR) {
     // collection being cleared, trigger all effects for target
+    // collection.clear() 的时候，将所有的相关依赖都执行一遍
     depsMap.forEach(dep => {
       addRunners(effects, computedRunners, dep)
     })
   } else {
     // schedule runs for SET | ADD | DELETE
+    // collection.add() set() deleteEntry()的时候
+    // 只执行target[key] 的相关依赖
     if (key !== void 0) {
       addRunners(effects, computedRunners, depsMap.get(key))
     }
     // also run for iteration key on ADD | DELETE
+    // target 的话就是OperationTypes.SET，否则就是OperationTypes.ADD
+    // 所以这边是数组或者collection.size()的长度变化了
     if (type === OperationTypes.ADD || type === OperationTypes.DELETE) {
       const iterationKey = Array.isArray(target) ? 'length' : ITERATE_KEY
       addRunners(effects, computedRunners, depsMap.get(iterationKey))
@@ -185,10 +200,13 @@ export function trigger(
   }
   // Important: computed effects must be run first so that computed getters
   // can be invalidated before any normal effects that depend on them are run.
+  // computedRunners必须运行在effects之前，这样在effects运行的时候才能取到computed之后的值
   computedRunners.forEach(run)
   effects.forEach(run)
 }
 
+// 将effect是否是computed
+// 分别加入computedRunners 和 effects 中
 function addRunners(
   effects: Set<ReactiveEffect>,
   computedRunners: Set<ReactiveEffect>,

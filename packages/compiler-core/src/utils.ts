@@ -97,6 +97,7 @@ export function advancePositionWithClone(
 
 // advance by mutation without cloning (for performance reasons), since this
 // gets called a lot in the parser
+// 重新计算pos的offset, line, column
 export function advancePositionWithMutation(
   pos: Position,
   source: string,
@@ -106,6 +107,7 @@ export function advancePositionWithMutation(
   let lastNewLinePos = -1
   for (let i = 0; i < numberOfCharacters; i++) {
     if (source.charCodeAt(i) === 10 /* newline char code */) {
+      // 换行符
       linesCount++
       lastNewLinePos = i
     }
